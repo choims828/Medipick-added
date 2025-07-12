@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function HospitalRecommendationUI() {
   const [location, setLocation] = useState("");
@@ -14,14 +14,16 @@ export default function HospitalRecommendationUI() {
     femaleDoctor: 3,
   });
   const [results, setResults] = useState([]);
+  const mapRef = useRef(null);
 
   const hospitals = [
     {
       name: "서울내외의원",
+      type: "유방&갑상선",
       lat: 37.5396,
       lng: 127.0939,
+      timeText: "주말",
       attributes: {
-        time: 5,
         referral: 3,
         cost: 4,
         treatment: 4,
@@ -31,10 +33,11 @@ export default function HospitalRecommendationUI() {
     },
     {
       name: "가상병원 A",
-      lat: 37.4900,
-      lng: 127.1200,
+      type: "유방",
+      lat: 37.49,
+      lng: 127.12,
+      timeText: "야간,주말",
       attributes: {
-        time: 4,
         referral: 5,
         cost: 3,
         treatment: 3,
@@ -44,10 +47,11 @@ export default function HospitalRecommendationUI() {
     },
     {
       name: "가상병원 B",
-      lat: 37.5000,
-      lng: 127.1000,
+      type: "갑상선",
+      lat: 37.5,
+      lng: 127.1,
+      timeText: "평일",
       attributes: {
-        time: 3,
         referral: 4,
         cost: 5,
         treatment: 3,
@@ -57,10 +61,11 @@ export default function HospitalRecommendationUI() {
     },
     {
       name: "가상병원 C",
-      lat: 37.5200,
-      lng: 127.1100,
+      type: "유방&갑상선",
+      lat: 37.52,
+      lng: 127.11,
+      timeText: "야간,주말",
       attributes: {
-        time: 5,
         referral: 2,
         cost: 4,
         treatment: 4,
@@ -70,10 +75,11 @@ export default function HospitalRecommendationUI() {
     },
     {
       name: "가상병원 D",
-      lat: 37.5300,
-      lng: 127.1300,
+      type: "갑상선",
+      lat: 37.53,
+      lng: 127.13,
+      timeText: "야간",
       attributes: {
-        time: 2,
         referral: 3,
         cost: 3,
         treatment: 2,
@@ -83,17 +89,49 @@ export default function HospitalRecommendationUI() {
     },
   ];
 
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+  const calculateTimeScore = (text) => {
+    if (!text) return 1;
+    const lower = text.toLowerCase();
+    if (lower.includes("야간") && lower.includes("주말")) return 5;
+    if (lower.includes("주말")) return 4;
+    if (lower.includes("야간")) return 3;
+    if (lower.includes("평일")) return 2;
+    return 1;
+  };
+
+  // 🔥 회송 점수 정규화 함수 추가
+  const calculateReferralScore = (count) => {
+    const min = 0;
+    const max = 374;
+    const normalized = (count - min) / (max - min);
+    return 1 + normalized * 4;
+  };
+
+  const diseaseMatches = (userType, hospitalType) => {
+    if (userType === "both") return true;
+    if (userType === "breast") return hospitalType === "유방" || hospitalType === "유방&갑상선";
+    if (userType === "thyroid") return hospitalType === "갑상선" || hospitalType === "유방&갑상선";
+    return false;
+  };
+
+  const getRouteInfo = async (startLat, startLng, endLat, endLng) => {
+    const url = `https://naveropenapi.apigw.ntruss.com/map-direction/v1/driving?start=${startLng},${startLat}&goal=${endLng},${endLat}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "X-NCP-APIGW-API-KEY-ID": "oqvjth21cz",
+        "X-NCP-APIGW-API-KEY": "0HbkVan5DXmAPe7IoFa3iB1kMvWYMDhrwoxZBpHO",
+      },
+    });
+    const data = await response.json();
+    if (data.route && data.route.traoptimal) {
+      const { distance, duration } = data.route.traoptimal[0].summary;
+      return {
+        distance: (distance / 1000).toFixed(2),
+        time: Math.round(duration / 60),
+      };
+    }
+    return null;
   };
 
   const handleSliderChange = (key, value) => {
@@ -129,36 +167,83 @@ export default function HospitalRecommendationUI() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const normPref = Object.values(preferences);
     const normSum = normPref.reduce((a, b) => a + b, 0);
     const prefVector = normPref.map((v) => v / normSum);
 
-    const scored = hospitals.map((h) => {
-      const distanceVal = calculateDistance(coordinates.lat, coordinates.lng, h.lat, h.lng);
-      const distanceScore = 5 - Math.min(5, distanceVal);
+    const filteredHospitals = hospitals.filter(h => diseaseMatches(diseaseType, h.type));
+    const scored = [];
+
+    for (const h of filteredHospitals) {
+      const route = await getRouteInfo(coordinates.lat, coordinates.lng, h.lat, h.lng);
+      if (!route) continue;
+
+      const timeScore = calculateTimeScore(h.timeText);
+
+      // 🔥 회송 실적 점수 정규화 (임시로 40건 적용)
+      const referralScore = calculateReferralScore(40);
+
       const attrVector = [
-        distanceScore,
-        h.attributes.time,
-        h.attributes.referral,
+        5 - Math.min(5, route.distance),
+        5 - Math.min(5, route.time / 10),
+        timeScore,
+        referralScore,
         h.attributes.cost,
         h.attributes.treatment,
         h.attributes.parking * 5,
         h.attributes.femaleDoctor * 5,
       ];
+
       const attrSum = attrVector.reduce((a, b) => a + b, 0);
       const normalizedAttr = attrVector.map((v) => v / attrSum);
       const score = prefVector.reduce((sum, p, i) => sum + p * normalizedAttr[i], 0);
 
-      return {
+      scored.push({
         name: h.name,
+        lat: h.lat,
+        lng: h.lng,
         score: score.toFixed(3),
-        distance: distanceVal.toFixed(2),
-      };
-    });
+        distance: route.distance,
+        time: route.time,
+      });
+    }
 
     setResults(scored.sort((a, b) => b.score - a.score));
   };
+
+  useEffect(() => {
+    const { naver } = window;
+    if (!naver || !mapRef.current || results.length === 0) return;
+
+    const map = new naver.maps.Map(mapRef.current, {
+      center: new naver.maps.LatLng(results[0].lat, results[0].lng),
+      zoom: 12,
+    });
+
+    results.forEach((res) => {
+      const marker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(res.lat, res.lng),
+        map,
+        title: res.name,
+      });
+
+      const infoWindow = new naver.maps.InfoWindow({
+        content: `
+          <div style="padding:10px; font-size:14px;">
+            <strong>${res.name}</strong><br />
+            점수: ${res.score}<br />
+            거리: ${res.distance}km<br />
+            시간: ${res.time}분
+          </div>
+        `,
+      });
+
+      naver.maps.Event.addListener(marker, "click", () => {
+        infoWindow.open(map, marker);
+      });
+    });
+  }, [results]);
 
   return (
     <div className="container">
@@ -194,23 +279,23 @@ export default function HospitalRecommendationUI() {
 
         return (
           <div key={key} className="slider-group">
-  <label className="slider-label">{labels[key]}</label>
-  <div className="slider-container">
-    <input
-      type="range"
-      min="1"
-      max="5"
-      step="1"
-      value={preferences[key]}
-      onChange={(e) => handleSliderChange(key, parseInt(e.target.value))}
-    />
-    <div className="slider-labels">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <span key={n}>{n}</span>
-      ))}
-    </div>
-  </div>
-</div>
+            <label className="slider-label">{labels[key]}</label>
+            <div className="slider-container">
+              <input
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                value={preferences[key]}
+                onChange={(e) => handleSliderChange(key, parseInt(e.target.value))}
+              />
+              <div className="slider-labels">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <span key={n}>{n}</span>
+                ))}
+              </div>
+            </div>
+          </div>
         );
       })}
 
@@ -224,8 +309,10 @@ export default function HospitalRecommendationUI() {
               <strong>{idx + 1}위: {res.name}</strong>
               <p>점수: {res.score}</p>
               <p>거리: {res.distance}km</p>
+              <p>소요 시간: {res.time}분</p>
             </div>
           ))}
+          <div id="map" ref={mapRef} style={{ width: "100%", height: "400px", marginTop: "20px" }}></div>
         </div>
       )}
     </div>
