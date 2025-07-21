@@ -1,5 +1,96 @@
 import useHospitalsFromSheet from "./Hooks/useHospitalsFromSheet";
 import { useState, useEffect, useRef } from "react";
+import KakaoHospitalMap from "./KakaoHospitalMap.jsx";
+
+const TMAP_API_KEY = "BfaPB4r0Z4a0HcdNoQK9N17SO6krdhtW2X1b7Vob";
+
+// 자동차
+const getCarRouteTmap = async (startLat, startLng, endLat, endLng) => {
+  const url = "https://apis.openapi.sk.com/tmap/routes";
+  const body = {
+    startX: startLng.toString(),
+    startY: startLat.toString(),
+    endX: endLng.toString(),
+    endY: endLat.toString(),
+    reqCoordType: "WGS84GEO",
+    resCoordType: "WGS84GEO",
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      appKey: TMAP_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json();
+  const summary = data?.features?.[0]?.properties;
+  return {
+    time: Math.round(summary?.totalTime / 60),
+    distance: (summary?.totalDistance / 1000).toFixed(1),
+  };
+};
+
+// 도보
+const getWalkRouteTmap = async (startLat, startLng, endLat, endLng) => {
+  const url = "https://apis.openapi.sk.com/tmap/routes/pedestrian";
+  const body = {
+    startX: startLng.toString(),
+    startY: startLat.toString(),
+    endX: endLng.toString(),
+    endY: endLat.toString(),
+    reqCoordType: "WGS84GEO",
+    resCoordType: "WGS84GEO",
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      appKey: TMAP_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json();
+  const summary = data?.features?.[0]?.properties;
+  return {
+    time: Math.round(summary?.totalTime / 60),
+    distance: (summary?.totalDistance / 1000).toFixed(1),
+  };
+};
+
+// 대중교통
+const getTransitRouteTmap = async (startLat, startLng, endLat, endLng) => {
+  const url = "https://apis.openapi.sk.com/transit/routes";
+  const body = {
+    startX: startLng.toString(),
+    startY: startLat.toString(),
+    endX: endLng.toString(),
+    endY: endLat.toString(),
+    reqCoordType: "WGS84GEO",
+    resCoordType: "WGS84GEO",
+    searchDttm: new Date().toISOString().replace(/[-T:\.Z]/g, "").slice(0, 12),
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      appKey: TMAP_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json();
+  const meta = data.meta;
+  return {
+    time: Math.round(meta?.totalTime / 60),
+    distance: (meta?.totalDistance / 1000).toFixed(1),
+  };
+};
 
 export default function HospitalRecommendationUI() {
   const [location, setLocation] = useState("");
@@ -20,6 +111,47 @@ export default function HospitalRecommendationUI() {
 const sheetUrl = "https://docs.google.com/spreadsheets/d/1oL7RKKOMTw0f_pR9xhbkE8bA2VjzTvqIPKvO9Nddrnk/export?format=csv";
 const { hospitals, loading } = useHospitalsFromSheet(sheetUrl);
 
+const getMedian = (arr) => {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return arr.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+};  
+// 중간값 계산 함수 추가
+  const getMedianUltrasoundPrice = (hospitalList, diseaseType) => {
+  const prices = hospitalList.map(h => {
+  if (diseaseType === "breast") return parsePrice(h.breastUltrasoundPrice);
+  if (diseaseType === "thyroid") return parsePrice(h.thyroidUltrasoundPrice);
+  return Math.max(
+    parsePrice(h.breastUltrasoundPrice) ?? 0,
+    parsePrice(h.thyroidUltrasoundPrice) ?? 0
+  );
+}).filter(p => typeof p === "number" && !isNaN(p));
+
+  if (prices.length === 0) return null;
+
+  prices.sort((a, b) => a - b);
+  const mid = Math.floor(prices.length / 2);
+  return prices.length % 2 === 0
+    ? (prices[mid - 1] + prices[mid]) / 2
+    : prices[mid];
+};
+
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const toRad = (x) => (x * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
   const calculateTimeScore = (text) => {
     if (!text) return 1;
@@ -31,6 +163,40 @@ const { hospitals, loading } = useHospitalsFromSheet(sheetUrl);
     return 1;
   };
 
+  // 📈 초음파 비용 계산 함수 추가 (여기!)
+const getUltrasoundPrice = (h, diseaseType, medianBreast, medianThyroid, medianBoth) => {
+  const parse = (v) => {
+    const num = Number(String(v).replace(/[^0-9]/g, ""));
+    return isNaN(num) ? null : num;
+  };
+
+  if (diseaseType === "breast") {
+    const val = parse(h.breastUltrasoundPrice);
+    if (typeof val === "number") return val;
+    console.warn(`📌 유방 가격 누락 → 중간값 대체: ${h.name}`);
+    return medianBreast ?? 50000;
+  }
+
+  if (diseaseType === "thyroid") {
+    const val = parse(h.thyroidUltrasoundPrice);
+    if (typeof val === "number") return val;
+    console.warn(`📌 갑상선 가격 누락 → 중간값 대체: ${h.name}`);
+    return medianThyroid ?? 50000;
+  }
+
+  const breast = parse(h.breastUltrasoundPrice);
+  const thyroid = parse(h.thyroidUltrasoundPrice);
+  const hasBreast = typeof breast === "number";
+  const hasThyroid = typeof thyroid === "number";
+
+  if (hasBreast && hasThyroid) return breast + thyroid;
+  if (hasBreast) return breast + (medianThyroid ?? 50000);
+  if (hasThyroid) return thyroid + (medianBreast ?? 50000);
+
+  console.warn(`📌 유방/갑상선 가격 모두 누락 → 전체 중간값 대체: ${h.name}`);
+  return medianBoth ?? 100000;
+};
+
  // 🔥 회송 점수 정규화 함수
 const calculateReferralScore = (count) => {
   const min = 0;
@@ -38,29 +204,51 @@ const calculateReferralScore = (count) => {
   const normalized = (count - min) / (max - min);
   return 1 + normalized * 4;
 };
-
+// 🔧 초음파 가격 숫자 정제 함수 (여기에 넣으세요!)
+const parsePrice = (val) => {
+  const num = Number(String(val).replace(/[^0-9]/g, ""));
+  return isNaN(num) ? null : num;
+};
 // 🔍 초음파 비용 점수 (저렴할수록 높음)
-const calculateUltrasoundScore = (price, minPrice, maxPrice) => {
-  if (typeof price !== "number" || isNaN(price)) {
-    console.warn(`초음파 가격 정보 누락 또는 잘못된 값: ${price}`);
+const calculateUltrasoundScore = (ultrasoundPrice, minPrice, maxPrice) => {
+  if (typeof ultrasoundPrice !== "number" || isNaN(ultrasoundPrice)) {
+    console.warn(`초음파 가격 정보 누락 또는 잘못된 값: ${ultrasoundPrice}`);
     return 3;
   }
-  const normalized = (maxPrice - price) / (maxPrice - minPrice);
+   if (maxPrice === minPrice) {
+    return 3; // 변화가 없으면 중립 점수
+  }
+  const normalized = (maxPrice - ultrasoundPrice) / (maxPrice - minPrice);
   return 1 + normalized * 4;
 };
 
 // 🏥 치료 가능 여부 점수
 const calculateTreatmentScore = (hospital, diseaseType) => {
-  const mammotome = hospital.hasMammotome === true;
-  const rfa = hospital.hasThyroidRFA === true;
+  const hasBreastBiopsy = hospital.hasBreastBiopsy === true;     // N열
+  const hasMammotome = hospital.hasMammotome === true;           // O열
+  const hasThyroidBiopsy = hospital.hasThyroidBiopsy === true;   // Q열
+  const hasThyroidRFA = hospital.hasThyroidRFA === true;         // R열
 
-  if (diseaseType === "breast") return mammotome ? 5 : 3;
-  if (diseaseType === "thyroid") return rfa ? 5 : 3;
-  if (diseaseType === "both") {
-    if (mammotome && rfa) return 5;
-    if (mammotome || rfa) return 4;
+  if (diseaseType === "breast") {
+    if (hasMammotome) return 5;
+    if (hasBreastBiopsy) return 4;
     return 3;
   }
+
+  if (diseaseType === "thyroid") {
+    if (hasThyroidRFA) return 5;
+    if (hasThyroidBiopsy) return 4;
+    return 3;
+  }
+
+  if (diseaseType === "both") {
+    const hasAny = hasMammotome || hasBreastBiopsy || hasThyroidRFA || hasThyroidBiopsy;
+    const hasAll = hasMammotome && hasThyroidRFA;
+    if (hasAll) return 5;
+    if (hasAny) return 4;
+    return 3;
+  }
+
   return 3;
 };
 
@@ -83,37 +271,11 @@ const diseaseMatches = (userType, hospitalTypeRaw) => {
   if (userType === "thyroid") return hospitalType.includes("갑상선");
   return false;
 };
-
-  const getRouteInfo = async (startLat, startLng, endLat, endLng) => {
-  const url = `/naver-directions?start=${startLng},${startLat}&goal=${endLng},${endLat}`;
-
-  try {
-    const response = await fetch(url, { method: "GET" });
-    const data = await response.json();
-
-    // ✅ API 에러 응답 확인
-    if (data.error) {
-      console.warn("⚠️ API 에러 응답:", data.error);
-      return null;
-    }
-
-    // ✅ 요약 정보 유효성 체크
-    const summary = data?.route?.traoptimal?.[0]?.summary;
-    if (!summary || summary.distance == null || summary.duration == null) {
-      console.warn("⚠️ 요약 정보 없음:", data);
-      return null;
-    }
-
-    // ✅ 요약 정보 추출해서 반환
-    return {
-      distance: summary.distance / 1000, // → km 단위 변환
-      time: summary.duration / 60000     // → 분 단위 변환
-    };
-  } catch (error) {
-    console.error("경로 정보 요청 실패:", error, { startLat, startLng, endLat, endLng });
-    return null;
-  }
-};
+const getRouteInfo = async (startLat, startLng, endLat, endLng) => {
+  const distance = Math.random() * 6 + 2; // 2 ~ 8km
+  const time = Math.random() * 25 + 10;   // 10 ~ 35분
+  return { distance, time };
+};let ultrasoundPrice;
 
   const handleSliderChange = (key, value) => {
     setPreferences({ ...preferences, [key]: value });
@@ -137,7 +299,7 @@ const diseaseMatches = (userType, hospitalTypeRaw) => {
       });
       const data = await response.json();
       if (data.documents && data.documents.length > 0) {
-        const { x, y } = data.documents[0].address;
+        const { x, y } = data.documents[0].address || data.documents[0].road_address || {};
         setCoordinates({ lat: parseFloat(y), lng: parseFloat(x) });
         alert(`좌표 변환 완료!\n위도: ${y}, 경도: ${x}`);
       } else {
@@ -172,17 +334,41 @@ const handleSubmit = async () => {
 
   // ✅ 병원 필터링 먼저
   const filteredHospitals = hospitals
-    .filter(h =>
-  diseaseMatches(diseaseType, h.type) &&
-  h.lat && h.lng && !isNaN(h.lat) && !isNaN(h.lng)
-)
-    .slice(0, 10); // 최대 10개 병원만 테스트
+  .filter(h =>
+    diseaseMatches(diseaseType, h.type) &&
+    h.lat && h.lng && !isNaN(h.lat) && !isNaN(h.lng)
+  )
+  .map(h => ({
+    ...h,
+    tempDistance: calculateDistance(coordinates.lat, coordinates.lng, h.lat, h.lng)
+  }))
+  .sort((a, b) => a.tempDistance - b.tempDistance) // 🔁 거리순 정렬
+  .slice(0, 10); // 📌 가까운 10개만 추림
 
   console.log("✅ 필터링된 병원 수:", filteredHospitals.length);
   if (filteredHospitals.length === 0) {
     alert("해당 조건에 맞는 병원이 없습니다.");
     return;
   }
+const breastPrices = filteredHospitals
+  .map(h => parsePrice(h.breastUltrasoundPrice))
+  .filter(p => typeof p === "number");
+
+const thyroidPrices = filteredHospitals
+  .map(h => parsePrice(h.thyroidUltrasoundPrice))
+  .filter(p => typeof p === "number");
+
+const bothPrices = filteredHospitals
+  .map(h => {
+    const b = parsePrice(h.breastUltrasoundPrice);
+    const t = parsePrice(h.thyroidUltrasoundPrice);
+    return typeof b === "number" && typeof t === "number" ? b + t : null;
+  })
+  .filter(p => typeof p === "number");
+
+const medianBreast = getMedian(breastPrices);
+const medianThyroid = getMedian(thyroidPrices);
+const medianBoth = getMedian(bothPrices);
 
   // 📉 초음파 비용 정규화용 min/max 계산
   const ultrasoundPrices = filteredHospitals
@@ -198,14 +384,27 @@ const handleSubmit = async () => {
     minPrice = Math.min(...ultrasoundPrices);
     maxPrice = Math.max(...ultrasoundPrices);
   }
+  const medianPrice = getMedianUltrasoundPrice(filteredHospitals, diseaseType);
   console.log("💰 초음파 가격 범위:", { minPrice, maxPrice });
 
   const scored = [];
 
-  for (const h of filteredHospitals) {
+   for (const h of filteredHospitals) {
   console.log("📍 병원 처리 중:", h.name);
   console.log("병원 좌표 확인:", h.name, h.lat, h.lng);
 
+    console.log("데이터 확인:", h.name, {
+    breastUltrasoundPrice: h.breastUltrasoundPrice,
+    hasMammotome: h.hasMammotome,
+    hasThyroidRFA: h.hasThyroidRFA,
+  });
+  const car = await getCarRouteTmap(coordinates.lat, coordinates.lng, h.lat, h.lng);
+  const walk = await getWalkRouteTmap(coordinates.lat, coordinates.lng, h.lat, h.lng);
+  const transit = await getTransitRouteTmap(coordinates.lat, coordinates.lng, h.lat, h.lng);
+
+  h.timeCar = car?.time ?? 0;
+  h.timeWalk = walk?.time ?? 0;
+  h.timeTransit = transit?.time ?? 0
   // 🔧 좌표 없으면 주소로 변환 시도
   if (!h.lat || !h.lng) {
     try {
@@ -230,7 +429,10 @@ const handleSubmit = async () => {
   }
 
   // ✅ 이 시점에서 h.lat, h.lng는 존재
-  const route = await getRouteInfo(coordinates.lat, coordinates.lng, h.lat, h.lng);
+  const route = {
+  distance: calculateDistance(coordinates.lat, coordinates.lng, h.lat, h.lng),
+  time: 0 // 시간은 임시 0 처리
+};
 
   if (
     !route ||
@@ -244,27 +446,48 @@ const handleSubmit = async () => {
   }
 
     // 초음파 비용
-    let ultrasoundPrice;
-    if (diseaseType === "breast") {
-      ultrasoundPrice = h.breastUltrasoundPrice;
-    } else if (diseaseType === "thyroid") {
-      ultrasoundPrice = h.thyroidUltrasoundPrice;
-    } else {
-      const prices = [h.breastUltrasoundPrice, h.thyroidUltrasoundPrice]
-        .filter(p => typeof p === "number");
-      ultrasoundPrice = prices.length ? Math.max(...prices) : null;
-    }
+    // 👉 1. 병원별 가격 추출
+if (diseaseType === "breast") {
+  ultrasoundPrice = parsePrice(h.breastUltrasoundPrice);
+} else if (diseaseType === "thyroid") {
+  ultrasoundPrice = parsePrice(h.thyroidUltrasoundPrice);
+} else {
+  const prices = [parsePrice(h.breastUltrasoundPrice), parsePrice(h.thyroidUltrasoundPrice)].filter(p => typeof p === "number");
+  ultrasoundPrice = prices.length ? Math.max(...prices) : null;
+}
 
-    // 점수 벡터
-    const vector = [
-      5 - route.distance,
-      5 - Math.min(route.time / 10, 5),
-      calculateReferralScore(h.referralCount),
-      calculateUltrasoundScore(ultrasoundPrice, minPrice, maxPrice),
-      h.hasMammotome || h.hasThyroidRFA ? 5 : 1,
-      h.hasParking ? 5 : 1,
-      h.hasFemaleDoctor ? 5 : 1,
-    ];
+if (typeof ultrasoundPrice !== "number" || isNaN(ultrasoundPrice)) {
+  ultrasoundPrice = medianPrice ?? 50000;
+  console.warn(`📌 초음파 가격 누락 → 대체값(${ultrasoundPrice}) 사용:`, h.name);
+}
+
+const price = Number(ultrasoundPrice);
+const safePrice = !isNaN(price) ? price : medianPrice;
+
+const vector = [
+  5 - route.distance,
+  5 - Math.min(route.time / 10, 5),
+  calculateReferralScore(h.referralCount),
+  calculateUltrasoundScore(safePrice, minPrice, maxPrice),
+  h.hasMammotome || h.hasThyroidRFA ? 5 : 1,
+  h.hasParking ? 5 : 1,
+  h.hasFemaleDoctor ? 5 : 1,
+];
+
+// 👉 2. 유효하지 않으면 중간값으로 대체
+if (typeof ultrasoundPrice !== "number" || isNaN(ultrasoundPrice)) {
+  if (ultrasoundPrices.length > 0) {
+    const sorted = [...ultrasoundPrices].sort((a, b) => a - b);
+    const midIdx = Math.floor(sorted.length / 2);
+    ultrasoundPrice = sorted.length % 2 === 1
+      ? sorted[midIdx]
+      : (sorted[midIdx - 1] + sorted[midIdx]) / 2;
+    console.warn(`📌 초음파 가격 누락 → 중간값(${ultrasoundPrice}) 사용:`, h.name);
+  } else {
+    ultrasoundPrice = 50000; // 📌 fallback 기본값
+    console.warn(`📌 초음파 가격 전원 누락 → 기본값(${ultrasoundPrice}) 사용:`, h.name);
+  }
+}
 
     const score = vector.reduce((sum, val, i) => sum + val * prefVector[i], 0);
 
@@ -274,7 +497,13 @@ const handleSubmit = async () => {
       ...h,
       distance: route.distance.toFixed(1),
       time: route.time.toFixed(0),
+      timeCar: h.timeCar,
+    timeWalk: h.timeWalk,
+    timeTransit: h.timeTransit,
       score: score.toFixed(2),
+       breastUltrasoundPrice: safePrice, 
+  hasMammotome: h.hasMammotome,     
+  hasThyroidRFA: h.hasThyroidRFA, 
     });
   }
 
@@ -297,43 +526,51 @@ useEffect(() => {
   console.log("병원 데이터:", hospitals);
 }, [hospitals]);
 
-  useEffect(() => {
-    const { naver } = window;
-    if (!naver || !mapRef.current || results.length === 0) return;
+useEffect(() => {
+  const { naver } = window;
+  if (!naver || !mapRef.current || results.length === 0) return;
 
-    const map = new naver.maps.Map(mapRef.current, {
-      center: new naver.maps.LatLng(results[0].lat, results[0].lng),
-      zoom: 12,
+  const map = new naver.maps.Map(mapRef.current, {
+    center: new naver.maps.LatLng(results[0].lat, results[0].lng),
+    zoom: 12,
+  });
+
+  const bounds = new naver.maps.LatLngBounds();
+
+  results.forEach((res) => {
+    const position = new naver.maps.LatLng(res.lat, res.lng);
+    bounds.extend(position);
+
+    const marker = new naver.maps.Marker({
+      position,
+      map,
+      title: res.name,
     });
 
-    results.forEach((res) => {
-      const marker = new naver.maps.Marker({
-        position: new naver.maps.LatLng(res.lat, res.lng),
-        map,
-        title: res.name,
-      });
-
-      const infoWindow = new naver.maps.InfoWindow({
-  content: `
-    <div style="padding:10px; font-size:14px;">
-      <strong>
-        <a href="https://map.naver.com/v5/search/${encodeURIComponent(res.name)}" target="_blank" rel="noopener noreferrer" style="text-decoration:underline; color:#0077cc;">
-          ${res.name}
-        </a>
-      </strong><br />
-      점수: ${res.score}<br />
-      거리: ${res.distance}km<br />
-      시간: ${res.time}분
-    </div>
-  `,
-});
-
-      naver.maps.Event.addListener(marker, "click", () => {
-        infoWindow.open(map, marker);
-      });
+    const infoWindow = new naver.maps.InfoWindow({
+      content: `
+        <div style="padding:10px; font-size:14px; max-width:220px;">
+          <strong>
+            <a href="https://map.naver.com/v5/search/${encodeURIComponent(res.name)}"
+               target="_blank" rel="noopener noreferrer"
+               style="text-decoration:underline; color:#0077cc;">
+              ${res.name}
+            </a>
+          </strong><br />
+          점수: ${res.score} / 5.00<br />
+          거리: ${res.distance}km<br />
+          예상 소요 시간: ${res.time}분
+        </div>
+      `,
     });
-  }, [results]);
 
+    naver.maps.Event.addListener(marker, "click", () => {
+      infoWindow.open(map, marker);
+    });
+  });
+
+  map.fitBounds(bounds);
+}, [results]);
   return (
     <div className="container">
       <h2>환자 정보 입력</h2>
@@ -407,7 +644,7 @@ useEffect(() => {
     </strong>
     <button
       onClick={() => {
-        const text = `[${idx + 1}위] ${res.name}
+        const text = `${idx + 1}. ${res.name}
 주소: ${res.address}
 전화번호: ${res.phone}
 홈페이지: ${res.homepage}`;
@@ -425,7 +662,7 @@ useEffect(() => {
     >
       📋 복사
     </button>
-    <p>점수: {res.score}</p>
+    <p>점수: {res.score} / 5.00</p>
     <p>거리: {res.distance}km</p>
     <p>소요 시간: {res.time}분</p>
     <p><strong>주소:</strong> {res.address}</p>
@@ -436,9 +673,66 @@ useEffect(() => {
         {res.homepage}
       </a>
     </p>
+     {/* 🔥 여기에 이모지 정보 추가 */}
+  <p style={{ marginTop: "6px", lineHeight: "1.6" }}>
+  ⏰ 시간: {res.timeText || "정보 없음"}<br />
+
+  {diseaseType === "breast" && (
+  <>
+    🩺 유방초음파:{" "}
+    {res.breastUltrasoundPrice != null
+      ? `${res.breastUltrasoundPrice.toLocaleString()}원`
+      : "정보 없음"}{" "}
+    / 치료 가능: {res.hasMammotome ? "맘모톰 가능" : "없음"}
+    <br />
+  </>
+)}
+
+{diseaseType === "thyroid" && (
+  <>
+    🩺 갑상선초음파:{" "}
+    {res.thyroidUltrasoundPrice != null
+      ? `${res.thyroidUltrasoundPrice.toLocaleString()}원`
+      : "정보 없음"}{" "}
+    / 치료 가능:{" "}
+    {[
+      res.hasThyroidRFA && "고주파열치료",
+      res.hasThyroidBiopsy && "갑상선조직검사",
+    ]
+      .filter(Boolean)
+      .join(", ") || "없음"}
+    <br />
+  </>
+)}
+
+{diseaseType === "both" && (
+  <>
+    🩺 유방: {res.breastUltrasoundPrice != null
+      ? `${res.breastUltrasoundPrice.toLocaleString()}원`
+      : "정보 없음"}, 
+    갑상선: {res.thyroidUltrasoundPrice != null
+      ? `${res.thyroidUltrasoundPrice.toLocaleString()}원`
+      : "정보 없음"}
+    <br />
+    🛠 치료 가능:{" "}
+{[
+  res.hasMammotome && "맘모톰",
+  res.hasThyroidRFA && "고주파열치료",
+  res.hasBreastBiopsy && "유방조직검사",
+  res.hasThyroidBiopsy && "갑상선조직검사",
+]
+  .filter(Boolean)
+  .join(", ") || "없음"}
+    <br />
+  </>
+)}
+
+  👩‍⚕️ 여의사 진료: {res.hasFemaleDoctor ? "있음" : "없음"}{" "}
+  🅿️ 주차: {res.hasParking ? "가능" : "불가"}
+</p>
   </div>
 ))}
-          <div id="map" ref={mapRef} style={{ width: "100%", height: "400px", marginTop: "20px" }}></div>
+          <KakaoHospitalMap userLocation={coordinates} hospitals={results} />
         </div>
       )}
     </div>
