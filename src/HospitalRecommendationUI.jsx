@@ -2,96 +2,6 @@ import useHospitalsFromSheet from "./Hooks/useHospitalsFromSheet";
 import { useState, useEffect, useRef } from "react";
 import KakaoHospitalMap from "./KakaoHospitalMap.jsx";
 
-const TMAP_API_KEY = "BfaPB4r0Z4a0HcdNoQK9N17SO6krdhtW2X1b7Vob";
-
-// 자동차
-const getCarRouteTmap = async (startLat, startLng, endLat, endLng) => {
-  const url = "https://apis.openapi.sk.com/tmap/routes";
-  const body = {
-    startX: startLng.toString(),
-    startY: startLat.toString(),
-    endX: endLng.toString(),
-    endY: endLat.toString(),
-    reqCoordType: "WGS84GEO",
-    resCoordType: "WGS84GEO",
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      appKey: TMAP_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json();
-  const summary = data?.features?.[0]?.properties;
-  return {
-    time: Math.round(summary?.totalTime / 60),
-    distance: (summary?.totalDistance / 1000).toFixed(1),
-  };
-};
-
-// 도보
-const getWalkRouteTmap = async (startLat, startLng, endLat, endLng) => {
-  const url = "https://apis.openapi.sk.com/tmap/routes/pedestrian";
-  const body = {
-    startX: startLng.toString(),
-    startY: startLat.toString(),
-    endX: endLng.toString(),
-    endY: endLat.toString(),
-    reqCoordType: "WGS84GEO",
-    resCoordType: "WGS84GEO",
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      appKey: TMAP_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json();
-  const summary = data?.features?.[0]?.properties;
-  return {
-    time: Math.round(summary?.totalTime / 60),
-    distance: (summary?.totalDistance / 1000).toFixed(1),
-  };
-};
-
-// 대중교통
-const getTransitRouteTmap = async (startLat, startLng, endLat, endLng) => {
-  const url = "https://apis.openapi.sk.com/transit/routes";
-  const body = {
-    startX: startLng.toString(),
-    startY: startLat.toString(),
-    endX: endLng.toString(),
-    endY: endLat.toString(),
-    reqCoordType: "WGS84GEO",
-    resCoordType: "WGS84GEO",
-    searchDttm: new Date().toISOString().replace(/[-T:\.Z]/g, "").slice(0, 12),
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      appKey: TMAP_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json();
-  const meta = data.meta;
-  return {
-    time: Math.round(meta?.totalTime / 60),
-    distance: (meta?.totalDistance / 1000).toFixed(1),
-  };
-};
-
 export default function HospitalRecommendationUI() {
   const [location, setLocation] = useState("");
   const [coordinates, setCoordinates] = useState({ lat: 37.51, lng: 127.12 });
@@ -108,8 +18,42 @@ export default function HospitalRecommendationUI() {
   const [results, setResults] = useState([]);
   const mapRef = useRef(null);
 
+
 const sheetUrl = "https://docs.google.com/spreadsheets/d/1oL7RKKOMTw0f_pR9xhbkE8bA2VjzTvqIPKvO9Nddrnk/export?format=csv";
 const { hospitals, loading } = useHospitalsFromSheet(sheetUrl);
+
+const sendToGoogleSheet = () => {
+  const selected = results[0];
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    위치입력: location,
+    위도: coordinates.lat,
+    경도: coordinates.lng,
+    질환: diseaseType,
+    거리중요도: preferences.distance,
+    진료시간: preferences.time,
+    회송: preferences.referral,
+    비용: preferences.cost,
+    치료: preferences.treatment,
+    여의사: preferences.femaleDoctor,
+    주차: preferences.parking,
+    선택병원: selected?.name,
+    점수: selected?.score,
+    거리: selected?.distance,
+  };
+
+  fetch("https://script.google.com/macros/s/구글앱스스크립트-URL/exec", {
+    method: "POST",
+    mode: "no-cors",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  alert("결과가 Google Sheet로 전송되었습니다!");
+};
 
 const getMedian = (arr) => {
   if (!arr.length) return null;
@@ -398,13 +342,7 @@ const medianBoth = getMedian(bothPrices);
     hasMammotome: h.hasMammotome,
     hasThyroidRFA: h.hasThyroidRFA,
   });
-  const car = await getCarRouteTmap(coordinates.lat, coordinates.lng, h.lat, h.lng);
-  const walk = await getWalkRouteTmap(coordinates.lat, coordinates.lng, h.lat, h.lng);
-  const transit = await getTransitRouteTmap(coordinates.lat, coordinates.lng, h.lat, h.lng);
-
-  h.timeCar = car?.time ?? 0;
-  h.timeWalk = walk?.time ?? 0;
-  h.timeTransit = transit?.time ?? 0
+ 
   // 🔧 좌표 없으면 주소로 변환 시도
   if (!h.lat || !h.lng) {
     try {
@@ -559,7 +497,6 @@ useEffect(() => {
           </strong><br />
           점수: ${res.score} / 5.00<br />
           거리: ${res.distance}km<br />
-          예상 소요 시간: ${res.time}분
         </div>
       `,
     });
@@ -664,7 +601,13 @@ useEffect(() => {
     </button>
     <p>점수: {res.score} / 5.00</p>
     <p>거리: {res.distance}km</p>
-    <p>소요 시간: {res.time}분</p>
+    <a
+  href={`https://map.naver.com/v5/search/${encodeURIComponent(res.name)}`}
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  📍 네이버 지도에서 병원 보기
+</a>
     <p><strong>주소:</strong> {res.address}</p>
     <p><strong>전화번호:</strong> {res.phone}</p>
     <p>
@@ -733,6 +676,20 @@ useEffect(() => {
   </div>
 ))}
           <KakaoHospitalMap userLocation={coordinates} hospitals={results} />
+          <button
+        onClick={sendToGoogleSheet}
+        style={{
+          backgroundColor: "#28a745",
+          color: "white",
+          padding: "8px 16px",
+          border: "none",
+          borderRadius: "4px",
+          marginTop: "16px",
+          cursor: "pointer",
+        }}
+      >
+        결과 전송
+      </button>
         </div>
       )}
     </div>
