@@ -15,8 +15,8 @@ app.get("/naver-directions", async (req, res) => {
   try {
     const response = await fetch(url, {
       headers: {
-        "X-NCP-APIGW-API-KEY-ID": oqvjth21cz,
-        "X-NCP-APIGW-API-KEY": 0HbkVan5DXmAPe7IoFa3iB1kMvWYMDhrwoxZBpHO,
+        "X-NCP-APIGW-API-KEY-ID": "oqvjth21cz",
+        "X-NCP-APIGW-API-KEY": "0HbkVan5DXmAPe7IoFa3iB1kMvWYMDhrwoxZBpHO",
       },
     });
 

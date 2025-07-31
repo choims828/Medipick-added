@@ -9,7 +9,6 @@ export default function HospitalRecommendationUI() {
   const [preferences, setPreferences] = useState({
     distance: 3,
     time: 3,
-    referral: 3,
     cost: 3,
     treatment: 3,
     parking: 3,
@@ -33,7 +32,6 @@ const sendToGoogleSheet = () => {
     질환: diseaseType,
     거리중요도: preferences.distance,
     진료시간: preferences.time,
-    회송: preferences.referral,
     비용: preferences.cost,
     치료: preferences.treatment,
     여의사: preferences.femaleDoctor,
@@ -141,13 +139,6 @@ const getUltrasoundPrice = (h, diseaseType, medianBreast, medianThyroid, medianB
   return medianBoth ?? 100000;
 };
 
- // 🔥 회송 점수 정규화 함수
-const calculateReferralScore = (count) => {
-  const min = 0;
-  const max = 374;
-  const normalized = (count - min) / (max - min);
-  return 1 + normalized * 4;
-};
 // 🔧 초음파 가격 숫자 정제 함수 (여기에 넣으세요!)
 const parsePrice = (val) => {
   const num = Number(String(val).replace(/[^0-9]/g, ""));
@@ -333,6 +324,10 @@ const medianBoth = getMedian(bothPrices);
 
   const scored = [];
 
+const distances = filteredHospitals.map(h => h.tempDistance);
+const minDist = Math.min(...distances);
+const maxDist = Math.max(...distances);
+
    for (const h of filteredHospitals) {
   console.log("📍 병원 처리 중:", h.name);
   console.log("병원 좌표 확인:", h.name, h.lat, h.lng);
@@ -402,10 +397,13 @@ if (typeof ultrasoundPrice !== "number" || isNaN(ultrasoundPrice)) {
 const price = Number(ultrasoundPrice);
 const safePrice = !isNaN(price) ? price : medianPrice;
 
+const distanceScore = maxDist === minDist
+  ? 5
+  : 1 + ((maxDist - route.distance) / (maxDist - minDist)) * 4;
+
 const vector = [
-  5 - route.distance,
+  distanceScore, // ✅ 가까울수록 높은 점수 (1~5)
   5 - Math.min(route.time / 10, 5),
-  calculateReferralScore(h.referralCount),
   calculateUltrasoundScore(safePrice, minPrice, maxPrice),
   h.hasMammotome || h.hasThyroidRFA ? 5 : 1,
   h.hasParking ? 5 : 1,
@@ -518,7 +516,7 @@ useEffect(() => {
         onChange={(e) => setLocation(e.target.value)}
         className="input"
       />
-      <button onClick={geocodeAddress} className="button">좌표 확인</button>
+      <button onClick={geocodeAddress} className="button">내 위치 확인</button>
       <p className="small">📍 좌표 확인됨 → 위도: {coordinates.lat}, 경도: {coordinates.lng}</p>
 
       <div className="section">
@@ -529,15 +527,14 @@ useEffect(() => {
       </div>
 
       <h3>병원 선택 요인 중요도 평가</h3>
-      {["distance", "time", "referral", "cost", "treatment", "parking", "femaleDoctor"].map((key) => {
+      {["distance", "time", "cost", "treatment", "parking", "femaleDoctor"].map((key) => {
         const labels = {
           distance: "1. 병원이 집에서 가까운 것이 중요하다",
           time: "2. 평일 저녁이나 주말에도 진료 가능한 병원을 선호한다",
-          referral: "3. 진료협력센터에서 회송 실적이 많은 병원일수록 신뢰가 간다",
-          cost: "4. 초음파 검사 비용이 저렴한 병원을 선호한다",
-          treatment: "5. 단순 검사보다 조직검사나 치료까지 가능한 병원을 선호한다",
-          parking: "6. 자가용 이용 시 주차가 가능한 병원을 선호한다",
-          femaleDoctor: "7. 여의사가 진료하는 병원을 선호한다",
+          cost: "3. 초음파 검사 비용이 저렴한 병원을 선호한다",
+          treatment: "4. 단순 검사보다 조직검사나 치료까지 가능한 병원을 선호한다",
+          parking: "5. 자가용 이용 시 주차가 가능한 병원을 선호한다",
+          femaleDoctor: "6. 여의사가 진료하는 병원을 선호한다",
         };
 
         return (
@@ -600,7 +597,7 @@ useEffect(() => {
       📋 복사
     </button>
     <p>점수: {res.score} / 5.00</p>
-    <p>거리: {res.distance}km</p>
+    <p>내 위치로부터 거리: {res.distance}km</p>
     <a
   href={`https://map.naver.com/v5/search/${encodeURIComponent(res.name)}`}
   target="_blank"
@@ -618,11 +615,12 @@ useEffect(() => {
     </p>
      {/* 🔥 여기에 이모지 정보 추가 */}
   <p style={{ marginTop: "6px", lineHeight: "1.6" }}>
-  ⏰ 시간: {res.timeText || "정보 없음"}<br />
+  ⏰ 진료 시간: 야간: {res.nightClinic ? "○" : "✕"} / 주말: {res.weekendClinic ? "○" : "✕"}
+  <br />
 
   {diseaseType === "breast" && (
   <>
-    🩺 유방초음파:{" "}
+    🛠 유방초음파:{" "}
     {res.breastUltrasoundPrice != null
       ? `${res.breastUltrasoundPrice.toLocaleString()}원`
       : "정보 없음"}{" "}
@@ -633,7 +631,7 @@ useEffect(() => {
 
 {diseaseType === "thyroid" && (
   <>
-    🩺 갑상선초음파:{" "}
+    🛠 갑상선초음파:{" "}
     {res.thyroidUltrasoundPrice != null
       ? `${res.thyroidUltrasoundPrice.toLocaleString()}원`
       : "정보 없음"}{" "}
@@ -650,7 +648,7 @@ useEffect(() => {
 
 {diseaseType === "both" && (
   <>
-    🩺 유방: {res.breastUltrasoundPrice != null
+    💰 유방: {res.breastUltrasoundPrice != null
       ? `${res.breastUltrasoundPrice.toLocaleString()}원`
       : "정보 없음"}, 
     갑상선: {res.thyroidUltrasoundPrice != null
