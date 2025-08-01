@@ -2,6 +2,33 @@ import useHospitalsFromSheet from "./Hooks/useHospitalsFromSheet";
 import { useState, useEffect, useRef } from "react";
 import KakaoHospitalMap from "./KakaoHospitalMap.jsx";
 
+const GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbwDh7gpyLxq1h8QbDQ79of-KXBnuYxPlBBii4Lhy3Telz0P5w_S_LkhOU2hmExJf3KnuA/exec";
+
+async function submitResult({ location, coordinates, diseaseType, preferences, results }) {
+  try {
+    const response = await fetch(GAS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        location,
+        coordinates,
+        diseaseType,
+        preferences,
+        results,
+      }),
+    });
+
+    const text = await response.text();
+    console.log("응답:", text);
+    alert("결과가 성공적으로 전송되었습니다!");
+  } catch (error) {
+    console.error("전송 오류:", error);
+    alert("전송 중 오류가 발생했습니다.");
+  }
+}
+
 export default function HospitalRecommendationUI() {
   const [location, setLocation] = useState("");
   const [coordinates, setCoordinates] = useState({ lat: 37.51, lng: 127.12 });
@@ -22,35 +49,13 @@ const sheetUrl = "https://docs.google.com/spreadsheets/d/1oL7RKKOMTw0f_pR9xhbkE8
 const { hospitals, loading } = useHospitalsFromSheet(sheetUrl);
 
 const sendToGoogleSheet = () => {
-  const selected = results[0];
-
-  const payload = {
-    timestamp: new Date().toISOString(),
-    위치입력: location,
-    위도: coordinates.lat,
-    경도: coordinates.lng,
-    질환: diseaseType,
-    거리중요도: preferences.distance,
-    진료시간: preferences.time,
-    비용: preferences.cost,
-    치료: preferences.treatment,
-    여의사: preferences.femaleDoctor,
-    주차: preferences.parking,
-    선택병원: selected?.name,
-    점수: selected?.score,
-    거리: selected?.distance,
-  };
-
-  fetch("https://script.google.com/macros/s/구글앱스스크립트-URL/exec", {
-    method: "POST",
-    mode: "no-cors",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+  submitResult({
+    location,
+    coordinates,
+    diseaseType,
+    preferences,
+    results,
   });
-
-  alert("결과가 Google Sheet로 전송되었습니다!");
 };
 
 const getMedian = (arr) => {
