@@ -2,7 +2,7 @@ import useHospitalsFromSheet from "./Hooks/useHospitalsFromSheet";
 import { useState, useEffect, useRef } from "react";
 import KakaoHospitalMap from "./KakaoHospitalMap.jsx";
 
-const GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbwDh7gpyLxq1h8QbDQ79of-KXBnuYxPlBBii4Lhy3Telz0P5w_S_LkhOU2hmExJf3KnuA/exec";
+const GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyMASuSEZzS7DNr2GJVkwXVpsbSqwB8hg55rHfHmUGgBvK_OBa8Z2KjQx8eikmPu0nj8w/exec";
 
 async function submitResult({ location, coordinates, diseaseType, preferences, results }) {
   try {
