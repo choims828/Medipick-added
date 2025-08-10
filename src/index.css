@@ -21,7 +21,6 @@
 }
 
 /* Global */
-
 body {
   margin: 0;
   display: flex;
@@ -31,19 +30,14 @@ body {
 }
 
 /* Links */
-
 a {
   font-weight: 500;
   color: #646cff;
   text-decoration: inherit;
 }
-
-a:hover {
-  color: #535bf2;
-}
+a:hover { color: #535bf2; }
 
 /* Buttons */
-
 button {
   border-radius: 8px;
   border: 1px solid transparent;
@@ -55,20 +49,14 @@ button {
   cursor: pointer;
   transition: border-color 0.25s;
 }
-
-button:hover {
-  border-color: #646cff;
-}
-
+button:hover { border-color: #646cff; }
 button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
+button:focus-visible { outline: 4px auto -webkit-focus-ring-color; }
 
 /* Custom Classes */
-
 .container {
-  max-width: 750px;
+  max-width: 1280px;
+  width: min(1280px, 96vw); /* 화면을 더 많이 사용 */
   margin: 30px auto;
   background: white;
   padding: 24px;
@@ -95,31 +83,15 @@ button:focus-visible {
   cursor: pointer;
 }
 
-.small {
-  font-size: 0.85rem;
-  color: gray;
-}
+.small { font-size: 0.85rem; color: gray; }
 
-.section {
-  margin-top: 10px;
-  margin-bottom: 16px;
-}
+.section { margin-top: 10px; margin-bottom: 16px; }
 
-.slider-group {
-  margin-bottom: 24px;
-  width: 100%;
-}
+.slider-group { margin-bottom: 24px; width: 100%; }
 
-.slider-label {
-  display: block;
-  font-weight: 500;
-  margin-bottom: 6px;
-}
+.slider-label { display: block; font-weight: 500; margin-bottom: 6px; }
 
-.slider-container {
-  width: 100%;
-}
-
+.slider-container { width: 100%; }
 .slider-container input[type="range"] {
   width: 100%;
   margin-bottom: 4px;
@@ -136,11 +108,7 @@ button:focus-visible {
   color: #666;
   padding: 0 4px;
 }
-
-.slider-labels span {
-  flex: 1;
-  text-align: center;
-}
+.slider-labels span { flex: 1; text-align: center; }
 
 .submit-button {
   background-color: black;
@@ -154,9 +122,7 @@ button:focus-visible {
   border: none;
 }
 
-.result-section {
-  margin-top: 30px;
-}
+.result-section { margin-top: 30px; }
 
 .result-card {
   border: 1px solid #eee;
@@ -164,4 +130,48 @@ button:focus-visible {
   border-radius: 10px;
   margin-bottom: 12px;
   background-color: #f9f9f9;
+}
+
+/* ============================= */
+/* 왼쪽 폼 + 오른쪽 결과 두 칸 레이아웃 */
+/* ============================= */
+.ipad-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr; /* 왼쪽 1, 오른쪽 1.25 (결과 더 넓게) */
+  gap: 24px;
+  align-items: start;
+}
+
+/* 왼쪽 폼 영역(상단 고정 느낌) */
+.left-pane {
+  position: sticky;
+  top: 16px;
+  align-self: start;
+}
+
+/* 오른쪽 결과 영역: 세로 스크롤 */
+.right-pane {
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  padding-right: 6px;             /* 스크롤바 여백 */
+  -webkit-overflow-scrolling: touch; /* iPad 관성 스크롤 */
+  overscroll-behavior: contain;      /* 튐 방지 */
+}
+
+/* 결과 섹션 위 여백 제거(그리드 안에서만) */
+.ipad-grid .result-section { margin-top: 0; }
+
+/* 결과 헤더 고정(추천 결과 / 전체 복사) */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #fff;
+  padding: 8px 0;
+}
+
+/* 반응형: 1024px 이하에서는 한 칸으로 쌓기 */
+@media (max-width: 1024px) {
+  .ipad-grid { grid-template-columns: 1fr; }
+  .right-pane { max-height: none; overflow: visible; }
 }

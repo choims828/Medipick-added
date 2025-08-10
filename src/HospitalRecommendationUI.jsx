@@ -2,48 +2,23 @@ import useHospitalsFromSheet from "./Hooks/useHospitalsFromSheet";
 import { useState, useEffect, useRef } from "react";
 import KakaoHospitalMap from "./KakaoHospitalMap.jsx";
 
-const GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyMASuSEZzS7DNr2GJVkwXVpsbSqwB8hg55rHfHmUGgBvK_OBa8Z2KjQx8eikmPu0nj8w/exec";
-
-async function submitResult({ location, coordinates, diseaseType, preferences, results }) {
-  try {
-    const response = await fetch(GAS_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        location,
-        coordinates,
-        diseaseType,
-        preferences,
-        results,
-      }),
-    });
-
-    const text = await response.text();
-    console.log("응답:", text);
-    alert("결과가 성공적으로 전송되었습니다!");
-  } catch (error) {
-    console.error("전송 오류:", error);
-    alert("전송 중 오류가 발생했습니다.");
-  }
-}
-
 export default function HospitalRecommendationUI() {
   const [location, setLocation] = useState("");
   const [coordinates, setCoordinates] = useState({ lat: 37.51, lng: 127.12 });
   const [diseaseType, setDiseaseType] = useState("breast");
   const [preferences, setPreferences] = useState({
-    distance: 3,
-    time: 3,
-    cost: 3,
-    treatment: 3,
-    parking: 3,
-    femaleDoctor: 3,
+    distance: null,
+    time: null,
+    cost: null,
+    treatment: null,
+    parking: null,
+    femaleDoctor: null,
   });
   const [results, setResults] = useState([]);
   const mapRef = useRef(null);
 
+ const prefKeys = ["distance","time","cost","treatment","parking","femaleDoctor"];
+ const allAnswered = prefKeys.every(k => typeof preferences[k] === "number");
 
 const sheetUrl = "https://docs.google.com/spreadsheets/d/1oL7RKKOMTw0f_pR9xhbkE8bA2VjzTvqIPKvO9Nddrnk/export?format=csv";
 const { hospitals, loading } = useHospitalsFromSheet(sheetUrl);
@@ -211,6 +186,14 @@ const diseaseMatches = (userType, hospitalTypeRaw) => {
   if (userType === "thyroid") return hospitalType.includes("갑상선");
   return false;
 };
+const getType = (h) => {
+  const norm = v => (v ?? "").toString().trim();
+  if (norm(h.type)) return norm(h.type);     // 기존 type 있으면 사용
+  const keys = Object.keys(h || {});
+  const firstColValue = keys.length ? h[keys[0]] : ""; // 헤더 없을 때 A열 값
+  return norm(firstColValue);
+};
+
 const getRouteInfo = async (startLat, startLng, endLat, endLng) => {
   const distance = Math.random() * 6 + 2; // 2 ~ 8km
   const time = Math.random() * 25 + 10;   // 10 ~ 35분
@@ -274,15 +257,24 @@ const handleSubmit = async () => {
 
   // ✅ 병원 필터링 먼저
   const filteredHospitals = hospitals
-  .filter(h =>
-    diseaseMatches(diseaseType, h.type) &&
-    h.lat && h.lng && !isNaN(h.lat) && !isNaN(h.lng)
-  )
+  .filter((h) => {
+    const t = getType(h); // "유방" | "갑상선" | "유방&갑상선"
+    if (!t) return false;
+
+    if (diseaseType === "breast")  return t.includes("유방");       // 유방, 유방&갑상선
+    if (diseaseType === "thyroid") return t.includes("갑상선");     // 갑상선, 유방&갑상선
+    if (diseaseType === "both")    return t === "유방&갑상선";      // 유방&갑상선만
+    return true;
+  })
   .map(h => ({
     ...h,
-    tempDistance: calculateDistance(coordinates.lat, coordinates.lng, h.lat, h.lng)
+    // 위경도 없으면 일단 Infinity로 뒤로 밀어 정렬만 영향
+    tempDistance:
+      (h.lat && h.lng && !isNaN(h.lat) && !isNaN(h.lng))
+        ? calculateDistance(coordinates.lat, coordinates.lng, h.lat, h.lng)
+        : Infinity
   }))
-  .sort((a, b) => a.tempDistance - b.tempDistance) // 🔁 거리순 정렬
+  .sort((a, b) => a.tempDistance - b.tempDistance)
   .slice(0, 10); // 📌 가까운 10개만 추림
 
   console.log("✅ 필터링된 병원 수:", filteredHospitals.length);
@@ -453,19 +445,128 @@ if (typeof ultrasoundPrice !== "number" || isNaN(ultrasoundPrice)) {
 
   setResults(scored.slice(0, 5));
 };
-const copyHospitalInfo = (res, idx) => {
-  const text = `[${idx + 1}위] ${res.name}
+const buildShareText = (res, idx) => {
+  const night = res.nightClinic ? "○" : "✕";
+  const weekend = res.weekendClinic ? "○" : "✕";
+
+  // 질환 유형에 맞춰 시술/검사 라인 구성
+  const feats = [];
+  if (diseaseType === "breast" || diseaseType === "both") {
+    if (res.hasMammotome) feats.push("맘모톰");
+    if (res.hasBreastBiopsy) feats.push("유방조직검사");
+  }
+  if (diseaseType === "thyroid" || diseaseType === "both") {
+    if (res.hasThyroidRFA) feats.push("고주파열치료");
+    if (res.hasThyroidBiopsy) feats.push("갑상선조직검사");
+  }
+  const featLine = feats.length ? feats.join(", ") : "없음";
+
+  return `${idx + 1}. ${res.name}
 주소: ${res.address}
-전화번호: ${res.phone}
-홈페이지: ${res.homepage}`;
-  navigator.clipboard.writeText(text)
-    .then(() => alert("병원 정보가 복사되었습니다."))
-    .catch(err => alert("복사 실패: " + err));
+전화번호: ${res.phone ?? "정보 없음"}
+홈페이지: ${res.homepage ?? "정보 없음"}
+진료 시간: 야간: ${night} / 주말: ${weekend}
+여의사 진료: ${res.hasFemaleDoctor ? "있음" : "없음"}
+주차: ${res.hasParking ? "가능" : "불가"}
+검사·시술 가능 여부: ${featLine}`;
+};
+
+// 폴백 복사
+const fallbackCopy = (text) => {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+};
+
+// 개별 복사
+const copyHospitalInfo = (res, idx) => {
+  const text = buildShareText(res, idx);
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => alert("병원 정보가 복사되었습니다."))
+      .catch(() => { fallbackCopy(text); alert("병원 정보가 복사되었습니다."); });
+  } else {
+    fallbackCopy(text);
+    alert("병원 정보가 복사되었습니다.");
+  }
+};
+
+// 전체 복사
+const copyAllResults = () => {
+  if (!results?.length) {
+    alert("복사할 결과가 없습니다.");
+    return;
+  }
+  const text = results.map((r, i) => buildShareText(r, i)).join("\n\n");
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => alert("추천 병원 전체가 복사되었습니다."))
+      .catch(() => { fallbackCopy(text); alert("추천 병원 전체가 복사되었습니다."); });
+  } else {
+    fallbackCopy(text);
+    alert("추천 병원 전체가 복사되었습니다.");
+  }
 };
 
 useEffect(() => {
   console.log("병원 데이터:", hospitals);
 }, [hospitals]);
+const formatResultText = (res, idx) => {
+  const night = res.nightClinic ? "○" : "✕";
+  const weekend = res.weekendClinic ? "○" : "✕";
+
+  let diseaseLine = "";
+  if (diseaseType === "breast") {
+    diseaseLine = `🛠 유방초음파: ${
+      res.breastUltrasoundPrice != null
+        ? `${res.breastUltrasoundPrice.toLocaleString()}원`
+        : "정보 없음"
+    } / 검사·시술 가능 여부: ${res.hasMammotome ? "맘모톰 가능" : "없음"}`;
+  } else if (diseaseType === "thyroid") {
+    const items = [
+      res.hasThyroidRFA && "고주파열치료",
+      res.hasThyroidBiopsy && "갑상선조직검사",
+    ].filter(Boolean).join(", ") || "없음";
+    diseaseLine = `🛠 갑상선초음파: ${
+      res.thyroidUltrasoundPrice != null
+        ? `${res.thyroidUltrasoundPrice.toLocaleString()}원`
+        : "정보 없음"
+    } / 검사·시술 가능 여부: ${items}`;
+  } else {
+    const items = [
+      res.hasMammotome && "맘모톰",
+      res.hasThyroidRFA && "고주파열치료",
+      res.hasBreastBiopsy && "유방조직검사",
+      res.hasThyroidBiopsy && "갑상선조직검사",
+    ].filter(Boolean).join(", ") || "없음";
+    diseaseLine = `💰 유방: ${
+      res.breastUltrasoundPrice != null
+        ? `${res.breastUltrasoundPrice.toLocaleString()}원`
+        : "정보 없음"
+    }, 갑상선: ${
+      res.thyroidUltrasoundPrice != null
+        ? `${res.thyroidUltrasoundPrice.toLocaleString()}원`
+        : "정보 없음"
+    }
+🛠 검사·시술 가능 여부: ${items}`;
+  }
+
+  return [
+    `${idx + 1}위: ${res.name}`,
+    `점수: ${res.score} / 5.00`,
+    `내 위치로부터 거리: ${res.distance}km`,
+    `주소: ${res.address}`,
+    `전화번호: ${res.phone}`,
+    `홈페이지: ${res.homepage}`,
+    `⏰ 진료 시간: 야간: ${night} / 주말: ${weekend}`,
+    `👩‍⚕️ 여의사 진료: ${res.hasFemaleDoctor ? "있음" : "없음"}  🅿️ 주차: ${res.hasParking ? "가능" : "불가"}`,
+    diseaseLine,
+  ].join("\n");
+};
+
 
 useEffect(() => {
   const { naver } = window;
@@ -512,7 +613,8 @@ useEffect(() => {
   map.fitBounds(bounds);
 }, [results]);
   return (
-    <div className="container">
+    <div className="container ipad-grid">
+      <section className="left-pane">
       <h2>환자 정보 입력</h2>
       <input
         type="text"
@@ -542,33 +644,102 @@ useEffect(() => {
           femaleDoctor: "6. 여의사가 진료하는 병원을 선호한다",
         };
 
-        return (
-          <div key={key} className="slider-group">
-            <label className="slider-label">{labels[key]}</label>
-            <div className="slider-container">
-              <input
-                type="range"
-                min="1"
-                max="5"
-                step="1"
-                value={preferences[key]}
-                onChange={(e) => handleSliderChange(key, parseInt(e.target.value))}
-              />
-              <div className="slider-labels">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <span key={n}>{n}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+         return (
+    <div key={key} className="slider-group" style={{ marginBottom: 20 }}>
+      <label className="slider-label" style={{ display: "block", fontWeight: 700, marginBottom: 10 }}>
+        {labels[key]}
+      </label>
 
-      <button onClick={handleSubmit} className="submit-button">병원 추천 받기</button>
+      {/* 숫자 버튼만 남김 */}
+      <div
+        role="group"
+        aria-label={`${labels[key]} 점수 선택`}
+        style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+      >
+        {[1, 2, 3, 4, 5].map((n) => {
+          const selected = preferences[key] === n;
+          return (
+            <button
+              key={n}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => handleSliderChange(key, n)}
+              style={{
+                width: 56,
+                height: 44,
+                borderRadius: 12,
+                border: "1px solid #e2e8f0",
+                background: selected ? "#0ea5e9" : "#ffffff",
+                color: selected ? "#ffffff" : "#111827",
+                fontSize: 18,
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                lineHeight: 1,
+                cursor: "pointer",
+                outline: "none",
+                userSelect: "none",
+              }}
+            >
+              {n}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+})}
+    
 
-      {results.length > 0 && (
-        <div className="result-section">
-          <h3>추천 결과</h3>
+      {/* 제출 버튼 + 안내문 */}
+<div style={{ marginTop: 12, marginBottom: 16 }}>
+  <button
+    onClick={handleSubmit}
+    className="submit-button"
+    disabled={!allAnswered}                 // ✅ 미선택 있으면 비활성화
+    aria-disabled={!allAnswered}
+    style={{
+      opacity: allAnswered ? 1 : 0.5,       // 흐리게 표시
+      cursor: allAnswered ? "pointer" : "not-allowed",
+    }}
+  >
+    병원 추천 받기
+  </button>
+
+  {/* 안내문 */}
+  {!allAnswered && (
+    <p style={{ color: "#ef4444", marginTop: 8, fontWeight: 600 }}>
+      모든 항목을 선택해주세요.
+    </p>
+  )}
+</div>
+</section>
+      {results.length > 0 ? (
+        <section className="right-pane">
+          <div className="result-section">
+            <div className="result-section">
+  <div className="sticky-header"></div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <h3 style={{ margin: 0 }}>추천 결과</h3>
+      <button
+        type="button"
+        onClick={copyAllResults}           // ← 이 함수가 위에 선언돼 있어야 함
+        title="추천 결과 전체 복사"
+        style={{
+          backgroundColor: "#f1f5f9",
+          border: "1px solid #e2e8f0",
+          color: "#111827",
+          padding: "6px 10px",
+          borderRadius: 8,
+          cursor: "pointer",
+          fontWeight: 600,
+        }}
+      >
+        전체 복사
+      </button>
+    </div>
+    </div>
           {results.map((res, idx) => (
   <div key={idx} className="result-card">
     <strong>
@@ -582,13 +753,8 @@ useEffect(() => {
       </a>
     </strong>
     <button
-      onClick={() => {
-        const text = `${idx + 1}. ${res.name}
-주소: ${res.address}
-전화번호: ${res.phone}
-홈페이지: ${res.homepage}`;
-        navigator.clipboard.writeText(text);
-      }}
+  type="button"
+  onClick={() => copyHospitalInfo(res, idx)}
       style={{
         background: "none",
         border: "none",
@@ -629,7 +795,7 @@ useEffect(() => {
     {res.breastUltrasoundPrice != null
       ? `${res.breastUltrasoundPrice.toLocaleString()}원`
       : "정보 없음"}{" "}
-    / 치료 가능: {res.hasMammotome ? "맘모톰 가능" : "없음"}
+    / 검사·시술 가능 여부: {res.hasMammotome ? "맘모톰 가능" : "없음"}
     <br />
   </>
 )}
@@ -640,7 +806,7 @@ useEffect(() => {
     {res.thyroidUltrasoundPrice != null
       ? `${res.thyroidUltrasoundPrice.toLocaleString()}원`
       : "정보 없음"}{" "}
-    / 치료 가능:{" "}
+    / 검사·시술 가능 여부:{" "}
     {[
       res.hasThyroidRFA && "고주파열치료",
       res.hasThyroidBiopsy && "갑상선조직검사",
@@ -660,7 +826,7 @@ useEffect(() => {
       ? `${res.thyroidUltrasoundPrice.toLocaleString()}원`
       : "정보 없음"}
     <br />
-    🛠 치료 가능:{" "}
+    🛠 검사·시술 가능 여부:{" "}
 {[
   res.hasMammotome && "맘모톰",
   res.hasThyroidRFA && "고주파열치료",
@@ -679,22 +845,8 @@ useEffect(() => {
   </div>
 ))}
           <KakaoHospitalMap userLocation={coordinates} hospitals={results} />
-          <button
-        onClick={sendToGoogleSheet}
-        style={{
-          backgroundColor: "#28a745",
-          color: "white",
-          padding: "8px 16px",
-          border: "none",
-          borderRadius: "4px",
-          marginTop: "16px",
-          cursor: "pointer",
-        }}
-      >
-        결과 전송
-      </button>
-        </div>
-      )}
+        </div></section>
+) : null}
     </div>
   );
 }
