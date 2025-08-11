@@ -446,8 +446,8 @@ if (typeof ultrasoundPrice !== "number" || isNaN(ultrasoundPrice)) {
   setResults(scored.slice(0, 5));
 };
 const buildShareText = (res, idx) => {
-  const night = res.nightClinic ? "○" : "✕";
-  const weekend = res.weekendClinic ? "○" : "✕";
+  const night = res.nightClinic ? "o" : "X";
+  const weekend = res.weekendClinic ? "○" : "X";
 
   // 질환 유형에 맞춰 시술/검사 라인 구성
   const feats = [];
@@ -515,8 +515,8 @@ useEffect(() => {
   console.log("병원 데이터:", hospitals);
 }, [hospitals]);
 const formatResultText = (res, idx) => {
-  const night = res.nightClinic ? "○" : "✕";
-  const weekend = res.weekendClinic ? "○" : "✕";
+  const night = res.nightClinic ? "○" : "X";
+  const weekend = res.weekendClinic ? "○" : "X";
 
   let diseaseLine = "";
   if (diseaseType === "breast") {
@@ -786,7 +786,7 @@ useEffect(() => {
     </p>
      {/* 🔥 여기에 이모지 정보 추가 */}
   <p style={{ marginTop: "6px", lineHeight: "1.6" }}>
-  ⏰ 진료 시간: 야간: {res.nightClinic ? "○" : "✕"} / 주말: {res.weekendClinic ? "○" : "✕"}
+  ⏰ 진료 시간: 야간: {res.nightClinic ? "○" : "X"} / 주말: {res.weekendClinic ? "○" : "X"}
   <br />
 
   {diseaseType === "breast" && (
