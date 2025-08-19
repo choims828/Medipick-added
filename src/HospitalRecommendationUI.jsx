@@ -645,8 +645,11 @@ useEffect(() => {
         };
 
          return (
-    <div key={key} className="slider-group" style={{ marginBottom: 20 }}>
-      <label className="slider-label" style={{ display: "block", fontWeight: 700, marginBottom: 10 }}>
+    <div key={key} className="slider-group" style={{ marginBottom: 20,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start" }}>
+      <label className="slider-label" style={{ display: "block", fontWeight: 700, marginBottom: 10, textAlign: "left" }}>
         {labels[key]}
       </label>
 
@@ -654,39 +657,52 @@ useEffect(() => {
       <div
         role="group"
         aria-label={`${labels[key]} 점수 선택`}
-        style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+         style={{ display: "flex", justifyContent: "center", gap: 8 }}
       >
-        {[1, 2, 3, 4, 5].map((n) => {
+        {[1, 2, 3, 4, 5].map((n, i) => {
           const selected = preferences[key] === n;
+          const labelsText = ["매우\n아니다", "아니다", "보통이다", "그렇다", "매우\n그렇다"];
           return (
-            <button
-              key={n}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => handleSliderChange(key, n)}
-              style={{
-                width: 56,
-                height: 44,
-                borderRadius: 12,
-                border: "1px solid #e2e8f0",
-                background: selected ? "#0ea5e9" : "#ffffff",
-                color: selected ? "#ffffff" : "#111827",
-                fontSize: 18,
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                lineHeight: 1,
-                cursor: "pointer",
-                outline: "none",
-                userSelect: "none",
+      <div key={n} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <button
+          type="button"
+          aria-pressed={selected}
+          onClick={() => handleSliderChange(key, n)}
+          style={{
+            width: 56,
+            height: 44,
+            borderRadius: 12,
+            border: "1px solid #e2e8f0",
+            background: selected ? "#0ea5e9" : "#ffffff",
+            color: selected ? "#ffffff" : "#111827",
+            fontSize: 18,
+            fontWeight: 700,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            lineHeight: 1,
+            cursor: "pointer",
+            outline: "none",
+            userSelect: "none",
               }}
-            >
-              {n}
-            </button>
-          );
-        })}
+        >
+          {n}
+        </button>
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: 12,
+            color: "#111827",
+            textAlign: "center",
+            whiteSpace: "pre-line"
+          }}
+        >
+          {labelsText[i]}
+        </div>
       </div>
+    );
+  })}
+</div>
     </div>
   );
 })}
