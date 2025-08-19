@@ -617,13 +617,21 @@ useEffect(() => {
     className="container ipad-grid"
     style={{
       display: "flex",
-      alignItems: "stretch",
-      flexWrap: "wrap", // 작은 화면에서 한 줄로 떨어지지 않게
+      flexDirection: "row",       // ✅ 가로 정렬
+      alignItems: "stretch",      // ✅ 세로 높이 맞추기
+      justifyContent: "space-between",
+      minHeight: "100vh",         // ✅ 화면 전체 높이 채우기
     }}
   >
     <section
       className="left-pane"
-      style={{ flex: 1, display: "flex", flexDirection: "column" }}
+      style={{
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    minHeight: "100%",         // 오른쪽과 세로 길이 맞추기
+    paddingRight: "12px",
+  }}
     >
       <h2>환자 정보 입력</h2>
       <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
@@ -769,7 +777,12 @@ useEffect(() => {
 </section>
       {results.length > 0 ? (
         <section className="right-pane"
-        style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        style={{
+    flex: 1,
+    minHeight: "100%",         // 왼쪽과 세로 길이 맞추기
+    overflowY: "auto",
+    paddingLeft: "12px",
+  }}>
           <div className="result-section">
             <div className="result-section">
   <div className="sticky-header"></div>
