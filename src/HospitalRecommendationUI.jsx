@@ -613,17 +613,51 @@ useEffect(() => {
   map.fitBounds(bounds);
 }, [results]);
   return (
-    <div className="container ipad-grid">
-      <section className="left-pane">
+  <div
+    className="container ipad-grid"
+    style={{
+      display: "flex",
+      alignItems: "stretch",
+      flexWrap: "wrap", // 작은 화면에서 한 줄로 떨어지지 않게
+    }}
+  >
+    <section
+      className="left-pane"
+      style={{ flex: 1, display: "flex", flexDirection: "column" }}
+    >
       <h2>환자 정보 입력</h2>
-      <input
-        type="text"
-        placeholder="예: 서울시 강남구 테헤란로212"
-        value={location}
-        onChange={(e) => setLocation(e.target.value)}
-        className="input"
-      />
-      <button onClick={geocodeAddress} className="button">내 위치 확인</button>
+      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+  <input
+    type="text"
+    placeholder="예: 서울시 강남구 테헤란로212"
+    value={location}
+    onChange={(e) => setLocation(e.target.value)}
+    className="input"
+    style={{
+      width: "300px",        // 📏 적당한 고정 너비
+      maxWidth: "100%",      // 📱 반응형 대응
+      padding: "8px",
+      border: "1px solid #d1d5db",
+      borderRadius: "6px",
+      fontSize: "14px",
+    }}
+  />
+
+  <button
+    onClick={geocodeAddress}
+    className="button"
+    style={{
+      padding: "8px 14px",
+      fontWeight: "600",
+      borderRadius: "6px",
+      backgroundColor: "#e5e7eb",
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    }}
+  >
+    내 위치 확인
+  </button>
+</div>
       <p className="small">📍 좌표 확인됨 → 위도: {coordinates.lat}, 경도: {coordinates.lng}</p>
 
       <div className="section">
@@ -716,9 +750,11 @@ useEffect(() => {
     disabled={!allAnswered}                 // ✅ 미선택 있으면 비활성화
     aria-disabled={!allAnswered}
     style={{
-      opacity: allAnswered ? 1 : 0.5,       // 흐리게 표시
-      cursor: allAnswered ? "pointer" : "not-allowed",
-    }}
+      opacity: allAnswered ? 1 : 0.5,
+    cursor: allAnswered ? "pointer" : "not-allowed",
+    maxWidth: "200px",          // 💡 버튼 너비 고정
+    alignSelf: "center",        // 💡 중앙 정렬
+  }}
   >
     병원 추천 받기
   </button>
@@ -732,7 +768,8 @@ useEffect(() => {
 </div>
 </section>
       {results.length > 0 ? (
-        <section className="right-pane">
+        <section className="right-pane"
+        style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           <div className="result-section">
             <div className="result-section">
   <div className="sticky-header"></div>
